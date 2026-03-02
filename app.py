@@ -4,6 +4,8 @@ import pandas as pd
 import cv2
 import torch
 import lpips
+import shutil 
+import uuid
 
 from flask import Flask, render_template, request, send_file
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity
@@ -83,23 +85,19 @@ def upload_folder():
     zip_path = os.path.join(UPLOAD_FOLDER, file.filename)
     file.save(zip_path)
 
-    extract_path = os.path.join(UPLOAD_FOLDER, "students_data")
+    unique_id = str(uuid.uuid4())
+    extract_path = os.path.join(UPLOAD_FOLDER, unique_id)
+    os.makedirs(extract_path, exist_ok=True)
     os.makedirs(extract_path, exist_ok=True)
 
     with zipfile.ZipFile(zip_path, "r") as zip_ref:
         zip_ref.extractall(extract_path)
 
-    items = os.listdir(extract_path)
-
-    if len(items) == 1 and os.path.isdir(os.path.join(extract_path, items[0])):
-        extract_path = os.path.join(extract_path, items[0])
-
-    print("Processing student folders inside:", extract_path)
+    os.remove(zip_path)  # delete zip after extraction
 
     results = []
+
     for student in sorted(os.listdir(extract_path)):
-
-
         student_path = os.path.join(extract_path, student)
 
         if not os.path.isdir(student_path):
@@ -128,13 +126,21 @@ def upload_folder():
             "LPIPS": round(lp, 4)
         })
 
+    shutil.rmtree(extract_path, ignore_errors=True)
+
     df = pd.DataFrame(results)
 
-    output_csv = os.path.join(OUTPUT_FOLDER, "Similarity_Report.csv")
-    df.to_csv(output_csv, index=False)
+    import io
+    csv_buffer = io.BytesIO()
+    df.to_csv(csv_buffer, index=False)
+    csv_buffer.seek(0)
 
-    return send_file(output_csv, as_attachment=True)
-
-
+    return send_file(
+        csv_buffer,
+        mimetype="text/csv",
+        as_attachment=True,
+        download_name="Similarity_Report.csv"
+    )
+    
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run()

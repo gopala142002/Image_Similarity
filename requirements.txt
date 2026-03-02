@@ -1,8 +1,7 @@
-flask
-opencv-python
+Flask
+gunicorn
+opencv-python-headless
 torch
-torchvision
 lpips
 pandas
 scikit-image
-openpyxl
