@@ -5,3 +5,4 @@ torch
 lpips
 pandas
 scikit-image
+numpy
