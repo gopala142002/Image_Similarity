@@ -10,8 +10,12 @@ import io
 
 from flask import Flask, render_template, request, send_file
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
+
+# Limit upload size (50MB)
+app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  
 
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -22,7 +26,6 @@ lpips_model = None
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".bmp", ".tiff")
 
 
-
 def load_image(path):
     img = cv2.imread(path)
     if img is None:
@@ -30,8 +33,14 @@ def load_image(path):
     return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
 
-def compute_metrics(img1, img2):
+def get_lpips_model():
     global lpips_model
+    if lpips_model is None:
+        lpips_model = lpips.LPIPS(net="alex").to("cpu")
+    return lpips_model
+
+
+def compute_metrics(img1, img2):
 
     if img1.shape != img2.shape:
         img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
@@ -45,20 +54,20 @@ def compute_metrics(img1, img2):
         data_range=255
     )
 
-    img1 = cv2.resize(img1, (256, 256))
-    img2 = cv2.resize(img2, (256, 256))
+    # Resize only for LPIPS (reduce memory usage)
+    img1_small = cv2.resize(img1, (256, 256))
+    img2_small = cv2.resize(img2, (256, 256))
 
-    t1 = torch.tensor(img1).permute(2, 0, 1).unsqueeze(0).float() / 255.0
-    t2 = torch.tensor(img2).permute(2, 0, 1).unsqueeze(0).float() / 255.0
+    t1 = torch.tensor(img1_small).permute(2, 0, 1).unsqueeze(0).float() / 255.0
+    t2 = torch.tensor(img2_small).permute(2, 0, 1).unsqueeze(0).float() / 255.0
 
     t1 = (t1 * 2 - 1)
     t2 = (t2 * 2 - 1)
 
-    if lpips_model is None:
-        lpips_model = lpips.LPIPS(net="alex").to("cpu")
+    model = get_lpips_model()
 
     with torch.no_grad():
-        lpips_val = lpips_model(t1, t2).item()
+        lpips_val = model(t1, t2).item()
 
     return psnr_val, ssim_val, lpips_val
 
@@ -74,26 +83,30 @@ def upload_folder():
     file = request.files.get("folderzip")
 
     if not file or file.filename == "":
-        return "No file uploaded!"
+        return "No file uploaded!", 400
 
-  
-    zip_path = os.path.join(UPLOAD_FOLDER, file.filename)
+    # Secure filename
+    filename = secure_filename(file.filename)
+    zip_path = os.path.join(UPLOAD_FOLDER, filename)
     file.save(zip_path)
-
 
     unique_id = str(uuid.uuid4())
     extract_path = os.path.join(UPLOAD_FOLDER, unique_id)
     os.makedirs(extract_path, exist_ok=True)
 
-
-    with zipfile.ZipFile(zip_path, "r") as zip_ref:
-        zip_ref.extractall(extract_path)
+    try:
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            zip_ref.extractall(extract_path)
+    except zipfile.BadZipFile:
+        os.remove(zip_path)
+        shutil.rmtree(extract_path, ignore_errors=True)
+        return "Invalid ZIP file!", 400
 
     os.remove(zip_path)
 
     results = []
 
-    for root, dirs, files in os.walk(extract_path):
+    for root, _, files in os.walk(extract_path):
 
         image_files = [
             f for f in files
@@ -111,12 +124,6 @@ def upload_folder():
             img2 = load_image(img2_path)
 
             if img1 is None or img2 is None:
-                results.append({
-                    "Student": student_name,
-                    "PSNR": "N/A",
-                    "SSIM": "N/A",
-                    "LPIPS": "N/A"
-                })
                 continue
 
             try:
@@ -130,17 +137,12 @@ def upload_folder():
                 })
 
             except Exception as e:
-                print("Error computing metrics:", e)
-
-                results.append({
-                    "Student": student_name,
-                    "PSNR": "N/A",
-                    "SSIM": "N/A",
-                    "LPIPS": "N/A"
-                })
-
+                print("Error:", e)
 
     shutil.rmtree(extract_path, ignore_errors=True)
+
+    if not results:
+        return "No valid image pairs found.", 400
 
     df = pd.DataFrame(results)
 
@@ -148,13 +150,17 @@ def upload_folder():
     df.to_csv(csv_buffer, index=False)
     csv_buffer.seek(0)
 
-    return send_file(
+    response = send_file(
         csv_buffer,
         mimetype="text/csv",
         as_attachment=True,
         download_name="Similarity_Report.csv"
     )
 
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
 
 if __name__ == "__main__":
-    app.run()
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
