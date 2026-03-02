@@ -1,0 +1,8 @@
+flask
+opencv-python
+torch
+torchvision
+lpips
+pandas
+scikit-image
+openpyxl

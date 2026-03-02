@@ -1,0 +1,26 @@
+-> PSNR (Peak Signal-to-Noise Ratio)
+    Pixel-level similarity between original and generated image.
+    It checks how much error/noise exists between them.
+    It checks how much error/noise exists between them.
+    High PSNR → generated image is very close to original
+    Low PSNR → lots of pixel differences
+
+-> SSIM (Structural Similarity Index)
+    Similarity of structure, contrast, and brightness.
+    Instead of raw pixel error, it focuses on:
+    - edges
+    - textures
+    - object structure
+    SSIM = 1 → images are identical structurally
+    SSIM close to 0 → completely different
+
+-> LPIPS(Learned Perceptual Image Patch Similarity)
+    Perceptual similarity — how similar two images look to humans.
+    Instead of comparing pixels, it compares deep features extracted from neural networks (AlexNet/VGG).
+    So it captures:
+    - realism
+    - perceptual differences
+    - texture quality
+
+    Lower LPIPS = Better
+    Higher LPIPS = Worse
