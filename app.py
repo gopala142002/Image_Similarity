@@ -16,8 +16,8 @@ app = Flask(__name__)
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-lpips_model = lpips.LPIPS(net="alex").to(DEVICE)
+DEVICE = "cpu"
+lpips_model = None
 
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".bmp", ".tiff")
 
@@ -31,6 +31,8 @@ def load_image(path):
 
 
 def compute_metrics(img1, img2):
+    global lpips_model
+
     if img1.shape != img2.shape:
         img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
 
@@ -43,17 +45,22 @@ def compute_metrics(img1, img2):
         data_range=255
     )
 
+    img1 = cv2.resize(img1, (256, 256))
+    img2 = cv2.resize(img2, (256, 256))
+
     t1 = torch.tensor(img1).permute(2, 0, 1).unsqueeze(0).float() / 255.0
     t2 = torch.tensor(img2).permute(2, 0, 1).unsqueeze(0).float() / 255.0
 
-    t1 = (t1 * 2 - 1).to(DEVICE)
-    t2 = (t2 * 2 - 1).to(DEVICE)
+    t1 = (t1 * 2 - 1)
+    t2 = (t2 * 2 - 1)
+
+    if lpips_model is None:
+        lpips_model = lpips.LPIPS(net="alex").to("cpu")
 
     with torch.no_grad():
         lpips_val = lpips_model(t1, t2).item()
 
     return psnr_val, ssim_val, lpips_val
-
 
 
 @app.route("/")
@@ -150,4 +157,4 @@ def upload_folder():
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run()
