@@ -14,7 +14,7 @@ from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
-# Limit upload size (50MB)
+
 app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  
 
 UPLOAD_FOLDER = "uploads"
@@ -54,7 +54,6 @@ def compute_metrics(img1, img2):
         data_range=255
     )
 
-    # Resize only for LPIPS (reduce memory usage)
     img1_small = cv2.resize(img1, (256, 256))
     img2_small = cv2.resize(img2, (256, 256))
 
@@ -85,7 +84,6 @@ def upload_folder():
     if not file or file.filename == "":
         return "No file uploaded!", 400
 
-    # Secure filename
     filename = secure_filename(file.filename)
     zip_path = os.path.join(UPLOAD_FOLDER, filename)
     file.save(zip_path)
